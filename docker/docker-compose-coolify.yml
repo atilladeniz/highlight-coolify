@@ -1,0 +1,266 @@
+version: '3.9'
+
+x-local-logging: &local-logging
+  driver: local
+
+services:
+  # =================================================================================
+  # Zookeeper (intern)
+  # =================================================================================
+  zookeeper:
+    image: "${ZOOKEEPER_IMAGE_NAME:-confluentinc/cp-zookeeper:7.7.0}"
+    container_name: zookeeper
+    restart: unless-stopped
+    logging: *local-logging
+    expose:
+      - "2181"
+    volumes:
+      - zoo-data:/var/lib/zookeeper/data
+      - zoo-log:/var/lib/zookeeper/log
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc 127.0.0.1 2181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Kafka (intern)
+  # =================================================================================
+  kafka:
+    image: "${KAFKA_IMAGE_NAME:-confluentinc/cp-kafka:7.7.0}"
+    container_name: kafka
+    restart: unless-stopped
+    logging: *local-logging
+    expose:
+      - "9092"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      # Aus deiner .env beziehbar:
+      KAFKA_ADVERTISED_LISTENERS: "${KAFKA_ADVERTISED_LISTENERS:-PLAINTEXT://kafka:9092}"
+      KAFKA_BROKER_ID: 1
+      KAFKA_CONSUMER_MAX_PARTITION_FETCH_BYTES: 268435456
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_SEGMENT_BYTES: 268435456
+      KAFKA_MESSAGE_MAX_BYTES: 268435456
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_PRODUCER_MAX_REQUEST_SIZE: 268435456
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 268435456
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Redis (intern)
+  # =================================================================================
+  redis:
+    image: "${REDIS_IMAGE_NAME:-redis:7.4.0}"
+    container_name: redis
+    restart: unless-stopped
+    logging: *local-logging
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Postgres (intern)
+  # =================================================================================
+  postgres:
+    image: "${POSTGRES_IMAGE_NAME:-ankane/pgvector:v0.5.1}"
+    container_name: postgres
+    restart: unless-stopped
+    logging: *local-logging
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../scripts/migrations/init.sql:/root/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # ClickHouse (intern)
+  # =================================================================================
+  clickhouse:
+    image: "${CLICKHOUSE_IMAGE_NAME:-clickhouse/clickhouse-server:24.3.15.72-alpine}"
+    container_name: clickhouse
+    restart: unless-stopped
+    logging: *local-logging
+    expose:
+      - "8123"
+      - "9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./config.xml:/etc/clickhouse-server/config.d/highlight.xml
+      - ./users.xml:/etc/clickhouse-server/users.d/highlight.xml
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query='SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Collector (intern)
+  # =================================================================================
+  collector:
+    container_name: collector
+    restart: unless-stopped
+    logging: *local-logging
+    build:
+      context: ..
+      dockerfile: ./docker/collector.Dockerfile
+      target: collector
+      pull: true
+      args:
+        - IN_DOCKER_GO
+        - SSL
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    expose:
+      - "24224"
+      - "34302"
+      - "4317"
+      - "4318"
+      - "4319"
+      - "4433"
+      - "4434"
+      - "4435"
+      - "6513"
+      - "6514"
+      - "8318"
+      - "8888"
+    volumes:
+      - ../backend/localhostssl/server.crt:/server.crt
+      - ../backend/localhostssl/server.key:/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4319/health/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Predictions (intern, optional)
+  # =================================================================================
+  predictions:
+    container_name: predictions
+    restart: unless-stopped
+    logging: *local-logging
+    build:
+      context: ..
+      dockerfile: ./packages/predictions/predictions.Dockerfile
+    expose:
+      - "5001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5001 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =================================================================================
+  # Highlight-Backend (intern)
+  # =================================================================================
+  backend:
+    container_name: backend
+    image: "${BACKEND_IMAGE_NAME:-ghcr.io/highlight/highlight-backend:latest}"
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      collector:
+        condition: service_started
+      predictions:
+        condition: service_started
+    environment:
+      # Falls nötig: ADMIN_PASSWORD, LICENSE_KEY usw.
+      ENVIRONMENT: production
+    expose:
+      - "8082"
+    volumes:
+      - highlight-data:/highlight-data
+      - ../backend/env.enc:/build/env.enc
+      - ../backend/env.enc.dgst:/build/env.enc.dgst
+      - ../backend/localhostssl/server.key:/build/localhostssl/server.key
+      - ../backend/localhostssl/server.crt:/build/localhostssl/server.crt
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # =================================================================================
+  # Highlight-Frontend (öffentlich) => nur EINE Subdomain in Coolify
+  # =================================================================================
+  frontend:
+    container_name: frontend
+    image: "${FRONTEND_IMAGE_NAME:-ghcr.io/highlight/highlight-frontend:latest}"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # So erstellt Coolify EINE Subdomain + leitet Pfad / auf Port 3000
+      - SERVICE_FQDN_HIGHLIGHT_3000=/
+      # Ggf. RESTLICHE Variablen:
+      # REACT_APP_PRIVATE_GRAPH_URI=http://backend:8082/private
+      # REACT_APP_PUBLIC_GRAPH_URI=http://backend:8082/public
+      # REACT_APP_FRONTEND_URI=https://custom-domain.example.org
+    expose:
+      - "3000"
+    volumes:
+      - ../backend/localhostssl/server.key:/etc/ssl/private/ssl-cert.key
+      - ../backend/localhostssl/server.pem:/etc/ssl/certs/ssl-cert.pem
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  highlight-data:
+  redis-data:
+  kafka-data:
+  postgres-data:
+  clickhouse-data:
+  clickhouse-logs:
+  zoo-data:
+  zoo-log:
+ 
