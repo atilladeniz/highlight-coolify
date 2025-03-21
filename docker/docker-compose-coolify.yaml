@@ -37,6 +37,8 @@ services:
       - SERVICE_FQDN_HIGHLIGHT_BACKEND_8082=/api
       - ADMIN_PASSWORD=${SERVICE_PASSWORD_HIGHLIGHT}
       - REACT_APP_FRONTEND_URI=${SERVICE_URL_HIGHLIGHT_FRONTEND}
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
     ports:
       - "8082:8082"
     volumes:
@@ -71,7 +73,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --requirepass ${SERVICE_PASSWORD_REDIS}
+    command: redis-server --requirepass "${SERVICE_PASSWORD_REDIS}"
     volumes:
       - redis-data:/data
     networks:
@@ -109,6 +111,8 @@ services:
       - CLICKHOUSE_USER=${SERVICE_USER_CLICKHOUSE:-default}
       - CLICKHOUSE_PASSWORD=${SERVICE_PASSWORD_CLICKHOUSE}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ports:
+      - "9000:9000"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     networks:
@@ -123,7 +127,7 @@ services:
     networks:
       - highlight-network
     volumes:
-      - ./collector.yml:/etc/otel-collector-config.yaml
+      - ./collector.yml:/etc/otel-collector-config.yaml:ro
     command: ["--config=/etc/otel-collector-config.yaml"]
     environment:
       - OTLP_ENDPOINT=${SERVICE_URL_HIGHLIGHT_BACKEND}/otel
