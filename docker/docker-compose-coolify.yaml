@@ -1,0 +1,133 @@
+# documentation: https://highlightio.com/docs
+# slogan: Highlight Hobby Edition - Monitor and Debug your applications
+# tags: monitoring,debugging,observability,highlight
+# logo: https://raw.githubusercontent.com/highlight/highlight/main/design/logo/logo.svg
+# port: 8080
+
+version: "3.8"
+
+services:
+  backend:
+    image: ghcr.io/highlight/highlight-backend:docker-v0.5.2
+    restart: unless-stopped
+    environment:
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+    volumes:
+      - highlight-data:/highlight-data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.highlight-backend.rule=Host(`${COOLIFY_PUBLIC_HOSTNAME}`) && PathPrefix(`/api`)"
+      - traefik.http.routers.highlight-backend.entryPoints=http
+      - traefik.http.services.highlight-backend.loadbalancer.server.port=8082
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - clickhouse
+      - zookeeper
+      - collector
+    networks:
+      - highlight-network
+
+  frontend:
+    image: ghcr.io/highlight/highlight-frontend:docker-v0.5.2
+    restart: unless-stopped
+    environment:
+      - REACT_APP_BACKEND_URI=http://backend:8082
+      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.highlight-frontend.rule=Host(`${COOLIFY_PUBLIC_HOSTNAME}`)"
+      - traefik.http.routers.highlight-frontend.entryPoints=http
+      - traefik.http.services.highlight-frontend.loadbalancer.server.port=8080
+    depends_on:
+      - backend
+    networks:
+      - highlight-network
+
+  postgres:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-highlightio}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - highlight-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis}
+    volumes:
+      - redis-data:/data
+    networks:
+      - highlight-network
+
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    restart: unless-stopped
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+    networks:
+      - highlight-network
+
+  kafka:
+    image: bitnami/kafka:3.4
+    restart: unless-stopped
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka-data:/bitnami/kafka
+    depends_on:
+      - zookeeper
+    networks:
+      - highlight-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.3
+    restart: unless-stopped
+    environment:
+      - CLICKHOUSE_DB=highlightio
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    networks:
+      - highlight-network
+
+  collector:
+    build:
+      context: .
+      dockerfile: collector.Dockerfile
+      args:
+        - OTEL_COLLECTOR_BUILD_IMAGE_NAME=alpine:3.21.3
+        - OTEL_COLLECTOR_IMAGE_NAME=otel/opentelemetry-collector-contrib:0.120.0
+        - IN_DOCKER_GO=true
+        - SSL=false
+    restart: unless-stopped
+    depends_on:
+      - kafka
+      - clickhouse
+    networks:
+      - highlight-network
+
+networks:
+  highlight-network:
+    driver: bridge
+
+volumes:
+  highlight-data:
+  postgres-data:
+  redis-data:
+  zookeeper-data:
+  kafka-data:
+  clickhouse-data:
