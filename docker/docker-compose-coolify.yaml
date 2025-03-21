@@ -2,7 +2,7 @@
 # slogan: Highlight Hobby Edition - Monitor and Debug your applications
 # tags: monitoring,debugging,observability,highlight
 # logo: https://raw.githubusercontent.com/highlight/highlight/main/design/logo/logo.svg
-# port: 8080
+# port: 3000
 
 version: "3.8"
 
@@ -11,8 +11,9 @@ services:
     image: ghcr.io/highlight/highlight-backend:docker-v0.5.2
     restart: unless-stopped
     environment:
+      - SERVICE_FQDN_HIGHLIGHT_BACKEND_8082
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+      - REACT_APP_FRONTEND_URI=${SERVICE_FQDN_HIGHLIGHT_FRONTEND:-http://localhost:3000}
     ports:
       - "8082:8082"
     volumes:
@@ -36,11 +37,12 @@ services:
     image: ghcr.io/highlight/highlight-frontend:docker-v0.5.2
     restart: unless-stopped
     environment:
-      - REACT_APP_BACKEND_URI=http://backend:8082
-      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+      - SERVICE_FQDN_HIGHLIGHT_FRONTEND_3000
+      - REACT_APP_BACKEND_URI=${SERVICE_FQDN_HIGHLIGHT_BACKEND:-http://backend:8082}
+      - REACT_APP_FRONTEND_URI=${SERVICE_FQDN_HIGHLIGHT_FRONTEND:-http://localhost:3000}
+      - HOST=0.0.0.0
     ports:
-      - "8080:8080"
-      - "3000:3000"
+      - "3000:8080"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.highlight-frontend.rule=Host(`${COOLIFY_PUBLIC_HOSTNAME}`)"
