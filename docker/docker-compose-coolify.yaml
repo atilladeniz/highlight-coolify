@@ -105,20 +105,16 @@ services:
       - highlight-network
 
   collector:
-    build:
-      context: .
-      dockerfile: collector.Dockerfile
-      args:
-        - OTEL_COLLECTOR_BUILD_IMAGE_NAME=alpine:3.21.3
-        - OTEL_COLLECTOR_IMAGE_NAME=otel/opentelemetry-collector-contrib:0.120.0
-        - IN_DOCKER_GO=true
-        - SSL=false
+    image: otel/opentelemetry-collector-contrib:0.120.0
     restart: unless-stopped
     depends_on:
       - kafka
       - clickhouse
     networks:
       - highlight-network
+    volumes:
+      - ./docker/collector.yml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
 
 networks:
   highlight-network:
