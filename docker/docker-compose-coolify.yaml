@@ -17,7 +17,9 @@ services:
       - HOST=0.0.0.0
       - ADMIN_PASSWORD=${SERVICE_PASSWORD_HIGHLIGHT}
     ports:
-      - "8081:8080"
+      - "8080:8080"
+      - "3000:3000"
+      - "6006:6006"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.highlight-frontend.rule=Host(`${COOLIFY_PUBLIC_HOSTNAME}`)"
