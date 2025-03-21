@@ -13,6 +13,8 @@ services:
     environment:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+    ports:
+      - "8082:8082"
     volumes:
       - highlight-data:/highlight-data
     labels:
@@ -36,6 +38,9 @@ services:
     environment:
       - REACT_APP_BACKEND_URI=http://backend:8082
       - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:8080}
+    ports:
+      - "8080:8080"
+      - "3000:3000"
     labels:
       - traefik.enable=true
       - "traefik.http.routers.highlight-frontend.rule=Host(`${COOLIFY_PUBLIC_HOSTNAME}`)"
@@ -115,6 +120,11 @@ services:
     volumes:
       - ./docker/collector.yml:/etc/otel-collector-config.yaml
     command: ["--config=/etc/otel-collector-config.yaml"]
+    environment:
+      - OTLP_ENDPOINT=http://backend:8082/otel
+    ports:
+      - "4317:4317"
+      - "4318:4318"
 
 networks:
   highlight-network:
