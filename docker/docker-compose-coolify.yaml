@@ -12,8 +12,13 @@ services:
       - clickhouse-data:/var/lib/clickhouse
     environment:
       - TZ=${TZ}
+      - SERVICE_PASSWORD_CLICKHOUSE=${SERVICE_PASSWORD_CLICKHOUSE}
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   zookeeper:
     image: ${ZOOKEEPER_IMAGE_NAME}
@@ -26,6 +31,10 @@ services:
       - TZ=${TZ}
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   kafka:
     image: ${KAFKA_IMAGE_NAME}
@@ -42,6 +51,10 @@ services:
       - zookeeper
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   postgres:
     image: ${POSTGRES_IMAGE_NAME}
@@ -57,8 +70,13 @@ services:
       - POSTGRES_USER=${PSQL_USER:-postgres}
       - POSTGRES_DB=${PSQL_DB:-postgres}
       - TZ=${TZ}
+      - SERVICE_PASSWORD_DB=${SERVICE_PASSWORD_DB}
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   redis:
     image: ${REDIS_IMAGE_NAME}
@@ -69,8 +87,13 @@ services:
       - redis-data:/data
     environment:
       - TZ=${TZ}
+      - SERVICE_PASSWORD_REDIS=${SERVICE_PASSWORD_REDIS}
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.120.0
@@ -105,6 +128,10 @@ services:
                 exporters: [logging]
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   predictions:
     build:
@@ -115,8 +142,17 @@ services:
       - 5001
     environment:
       - TZ=${TZ}
+      - SERVICE_FQDN_PREDICTIONS
     networks:
       - highlight-network
+    labels:
+      - coolify.managed=true
+      - coolify.type=service
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
+      - traefik.enable=true
+      - traefik.http.routers.predictions.rule=Host(`${SERVICE_FQDN_PREDICTIONS}`)
+      - traefik.http.routers.predictions.entrypoints=http
+      - traefik.http.services.predictions.loadbalancer.server.port=5001
       
   # Application services
   backend:
@@ -141,6 +177,9 @@ services:
       - COLLECTOR_ENDPOINT=http://collector:4318
       - PREDICTIONS_ENDPOINT=http://predictions:5001
       - SERVICE_FQDN_BACKEND=/private,/public,/health
+      - SERVICE_PASSWORD_BACKEND=${SERVICE_PASSWORD_BACKEND}
+      - REDIS_PASSWORD=${SERVICE_PASSWORD_REDIS}
+      - DB_PASSWORD=${SERVICE_PASSWORD_DB}
     depends_on:
       - clickhouse
       - kafka
@@ -149,6 +188,9 @@ services:
       - collector
       - predictions
     labels:
+      - coolify.managed=true
+      - coolify.type=application
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
       - traefik.http.routers.backend.rule=Host(`${REACT_APP_FRONTEND_URI}`) && PathPrefix(`/private`, `/public`, `/health`)
@@ -173,9 +215,14 @@ services:
       - SERVICE_FQDN_FRONTEND
       - REACT_APP_PRIVATE_GRAPH_URI=http://backend:8082/private
       - REACT_APP_PUBLIC_GRAPH_URI=http://backend:8082/public
+      - BACKEND_URL=http://backend:8082
+      - AUTH_SECRET=${SERVICE_PASSWORD_AUTH}
     depends_on:
       - backend
     labels:
+      - coolify.managed=true
+      - coolify.type=application
+      - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
       - traefik.http.routers.frontend.rule=Host(`${REACT_APP_FRONTEND_URI}`)
@@ -198,3 +245,7 @@ volumes:
 networks:
   highlight-network:
     driver: bridge
+    external: ${USE_EXTERNAL_NETWORK:-false}
+    name: ${NETWORK_NAME:-highlight-network}
+    labels:
+      - coolify.managed=true
