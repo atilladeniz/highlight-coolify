@@ -67,12 +67,13 @@ services:
       - 4318
     environment:
       - TZ=${TZ}
+    command: ["--config=/etc/otel/config.yaml"]
     volumes:
-      - ../collector/otel-collector.yaml:/etc/otel/config.yaml
+      - collector-config:/etc/otel
 
   predictions:
     build:
-      context: ..
+      context: .
       dockerfile: ./packages/predictions/predictions.Dockerfile
     restart: on-failure
     expose:
@@ -88,10 +89,6 @@ services:
       - 8082
     volumes:
       - highlight-data:/highlight-data
-      - ../backend/env.enc:/build/env.enc
-      - ../backend/env.enc.dgst:/build/env.enc.dgst
-      - ../backend/localhostssl/server.key:/build/localhostssl/server.key
-      - ../backend/localhostssl/server.crt:/build/localhostssl/server.crt
     env_file: .env
     depends_on:
       - clickhouse
@@ -118,9 +115,6 @@ services:
       - 3000
       - 6006
       - 8080
-    volumes:
-      - ../backend/localhostssl/server.key:/etc/ssl/private/ssl-cert.key
-      - ../backend/localhostssl/server.pem:/etc/ssl/certs/ssl-cert.pem
     env_file: .env
     depends_on:
       - backend
@@ -140,3 +134,4 @@ volumes:
   clickhouse-data:
   postgres-data:
   redis-data:
+  collector-config:
