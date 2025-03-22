@@ -61,20 +61,17 @@ services:
       - TZ=${TZ}
 
   collector:
-    build:
-      context: .
-      args:
-        - OTEL_COLLECTOR_ALPINE_IMAGE_NAME=${OTEL_COLLECTOR_ALPINE_IMAGE_NAME}
-        - OTEL_COLLECTOR_IMAGE_NAME=${OTEL_COLLECTOR_IMAGE_NAME}
+    image: ${OTEL_COLLECTOR_IMAGE_NAME}
     restart: on-failure
     expose:
       - 4318
     environment:
       - TZ=${TZ}
+    volumes:
+      - ../collector/otel-collector.yaml:/etc/otel/config.yaml
 
   predictions:
-    build:
-      context: .
+    image: ghcr.io/highlight/highlight-predictions:latest
     restart: on-failure
     environment:
       - TZ=${TZ}
