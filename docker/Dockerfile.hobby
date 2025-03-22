@@ -6,15 +6,15 @@ RUN apk add --no-cache bash curl docker docker-compose-plugin
 # Set the working directory
 WORKDIR /highlight
 
-# Copy necessary files from docker directory
-COPY docker/compose.hobby.yml .
-COPY docker/compose.yml .
-COPY docker/env.sh .
-COPY docker/run-hobby.sh .
-COPY docker/start-infra.sh .
-COPY docker/.env .
-COPY docker/otel-config.yaml .
-COPY docker/collector.yml .
+# Copy necessary files
+COPY compose.hobby.yml .
+COPY compose.yml .
+COPY env.sh .
+COPY run-hobby.sh .
+COPY start-infra.sh .
+COPY .env .
+COPY otel-config.yaml .
+COPY collector.yml .
 
 # Make scripts executable
 RUN chmod +x run-hobby.sh env.sh start-infra.sh

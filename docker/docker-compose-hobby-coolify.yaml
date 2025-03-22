@@ -4,8 +4,8 @@ version: '3'
 services:
   highlight:
     build:
-      context: ..
-      dockerfile: docker/Dockerfile.hobby
+      context: .
+      dockerfile: Dockerfile.hobby
     restart: unless-stopped
     expose:
       - 3000   # Frontend
