@@ -12,6 +12,8 @@ services:
       - clickhouse-data:/var/lib/clickhouse
     environment:
       - TZ=${TZ}
+    networks:
+      - highlight-network
 
   zookeeper:
     image: ${ZOOKEEPER_IMAGE_NAME}
@@ -22,6 +24,8 @@ services:
       - ZOOKEEPER_CLIENT_PORT=2181
       - ZOOKEEPER_TICK_TIME=2000
       - TZ=${TZ}
+    networks:
+      - highlight-network
 
   kafka:
     image: ${KAFKA_IMAGE_NAME}
@@ -31,24 +35,30 @@ services:
     environment:
       - KAFKA_BROKER_ID=1
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
-      - KAFKA_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS}
+      - KAFKA_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS:-PLAINTEXT://kafka:9092}
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - TZ=${TZ}
     depends_on:
       - zookeeper
+    networks:
+      - highlight-network
 
   postgres:
     image: ${POSTGRES_IMAGE_NAME}
     restart: on-failure
     expose:
       - 5432
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_PASSWORD=${PSQL_PASSWORD}
-      - POSTGRES_USER=${PSQL_USER}
-      - POSTGRES_DB=${PSQL_DB}
+      - POSTGRES_PASSWORD=${PSQL_PASSWORD:-${SERVICE_PASSWORD_POSTGRES}}
+      - POSTGRES_USER=${PSQL_USER:-postgres}
+      - POSTGRES_DB=${PSQL_DB:-postgres}
       - TZ=${TZ}
+    networks:
+      - highlight-network
 
   redis:
     image: ${REDIS_IMAGE_NAME}
@@ -59,6 +69,8 @@ services:
       - redis-data:/data
     environment:
       - TZ=${TZ}
+    networks:
+      - highlight-network
 
   collector:
     image: otel/opentelemetry-collector-contrib:0.120.0
@@ -70,6 +82,29 @@ services:
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
       - collector-config:/etc/otel
+      - type: bind
+        source: ./otel-config.yaml
+        target: /etc/otel/config.yaml
+        content: |
+          receivers:
+            otlp:
+              protocols:
+                http:
+                  endpoint: 0.0.0.0:4318
+          processors:
+            batch:
+              timeout: 1s
+          exporters:
+            logging:
+              loglevel: debug
+          service:
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [batch]
+                exporters: [logging]
+    networks:
+      - highlight-network
 
   predictions:
     build:
@@ -80,6 +115,8 @@ services:
       - 5001
     environment:
       - TZ=${TZ}
+    networks:
+      - highlight-network
       
   # Application services
   backend:
@@ -90,6 +127,20 @@ services:
     volumes:
       - highlight-data:/highlight-data
     env_file: .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${PSQL_USER:-postgres}
+      - POSTGRES_PASSWORD=${PSQL_PASSWORD:-${SERVICE_PASSWORD_POSTGRES}}
+      - POSTGRES_DB=${PSQL_DB:-postgres}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - COLLECTOR_ENDPOINT=http://collector:4318
+      - PREDICTIONS_ENDPOINT=http://predictions:5001
+      - SERVICE_FQDN_BACKEND=/private,/public,/health
     depends_on:
       - clickhouse
       - kafka
@@ -107,6 +158,8 @@ services:
       - traefik.http.routers.backend-secure.tls=true
       - traefik.http.routers.backend-secure.tls.certresolver=letsencrypt
       - traefik.http.services.backend.loadbalancer.server.port=8082
+    networks:
+      - highlight-network
 
   frontend:
     image: ${FRONTEND_IMAGE_NAME}
@@ -116,6 +169,10 @@ services:
       - 6006
       - 8080
     env_file: .env
+    environment:
+      - SERVICE_FQDN_FRONTEND
+      - REACT_APP_PRIVATE_GRAPH_URI=http://backend:8082/private
+      - REACT_APP_PUBLIC_GRAPH_URI=http://backend:8082/public
     depends_on:
       - backend
     labels:
@@ -128,6 +185,8 @@ services:
       - traefik.http.routers.frontend-secure.tls=true
       - traefik.http.routers.frontend-secure.tls.certresolver=letsencrypt
       - traefik.http.services.frontend.loadbalancer.server.port=3000
+    networks:
+      - highlight-network
 
 volumes:
   highlight-data:
@@ -135,3 +194,7 @@ volumes:
   postgres-data:
   redis-data:
   collector-config:
+
+networks:
+  highlight-network:
+    driver: bridge
