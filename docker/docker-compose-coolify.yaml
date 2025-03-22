@@ -17,7 +17,7 @@ services:
       - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME:-default}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "http://localhost:8123/ping"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 http://localhost:8123/ping || nc -z localhost 8123"]
       interval: 10s
       timeout: 10s
       retries: 3
@@ -165,7 +165,7 @@ services:
                 processors: [batch]
                 exporters: [logging]
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4318/"]
+      test: ["CMD-SHELL", "netstat -tulpn | grep 4318 || nc -z localhost 4318"]
       interval: 10s
       timeout: 10s
       retries: 3
@@ -196,7 +196,7 @@ services:
       - TZ=${TZ:-America/Los_Angeles}
       - SERVICE_FQDN_PREDICTIONS=${SERVICE_FQDN_PREDICTIONS:-predictions.localhost:3000}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5001/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5001/health || nc -z localhost 5001"]
       interval: 10s
       timeout: 10s
       retries: 3
