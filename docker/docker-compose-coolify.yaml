@@ -61,7 +61,7 @@ services:
       - TZ=${TZ}
 
   collector:
-    image: ${OTEL_COLLECTOR_IMAGE_NAME}
+    image: otel/opentelemetry-collector-contrib:0.120.0
     restart: on-failure
     expose:
       - 4318
@@ -69,12 +69,6 @@ services:
       - TZ=${TZ}
     volumes:
       - ../collector/otel-collector.yaml:/etc/otel/config.yaml
-
-  predictions:
-    image: ghcr.io/highlight/highlight-predictions:latest
-    restart: on-failure
-    environment:
-      - TZ=${TZ}
 
   # Application services
   backend:
@@ -95,7 +89,6 @@ services:
       - postgres
       - redis
       - collector
-      - predictions
     labels:
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
