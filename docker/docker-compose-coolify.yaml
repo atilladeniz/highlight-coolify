@@ -38,10 +38,11 @@ services:
       - ZOOKEEPER_TICK_TIME=2000
       - TZ=${TZ:-America/Los_Angeles}
     healthcheck:
-      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      test: ["CMD", "bash", "-c", "echo stat | nc localhost 2181"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - highlight-network
     labels:
@@ -65,10 +66,11 @@ services:
       zookeeper:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "localhost:9092"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - highlight-network
     labels:
