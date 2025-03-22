@@ -1,0 +1,49 @@
+version: '3'
+
+# Highlight.io hobby edition for Coolify deployment
+services:
+  highlight:
+    build:
+      context: .
+      dockerfile: Dockerfile.hobby
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Frontend
+      - "8082:8082"   # Backend API
+      - "4318:4318"   # OpenTelemetry
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - highlight-data:/highlight-data
+    environment:
+      - TZ=${TZ:-America/Los_Angeles}
+      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-http://localhost:3000}
+      - REACT_APP_PRIVATE_GRAPH_URI=${REACT_APP_PRIVATE_GRAPH_URI:-http://localhost:8082/private}
+      - REACT_APP_PUBLIC_GRAPH_URI=${REACT_APP_PUBLIC_GRAPH_URI:-http://localhost:8082/public}
+      - REACT_APP_OTLP_ENDPOINT=${REACT_APP_OTLP_ENDPOINT:-http://localhost:4318}
+      - REACT_APP_AUTH_MODE=${REACT_APP_AUTH_MODE:-password}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - SERVICE_FQDN_HIGHLIGHT
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      
+      # Frontend routing
+      - traefik.http.routers.frontend.rule=Host(`${REACT_APP_FRONTEND_URI}`)
+      - traefik.http.routers.frontend.entrypoints=http
+      - traefik.http.routers.frontend-secure.rule=Host(`${REACT_APP_FRONTEND_URI}`)
+      - traefik.http.routers.frontend-secure.entrypoints=https
+      - traefik.http.routers.frontend-secure.tls=true
+      - traefik.http.routers.frontend-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.frontend.loadbalancer.server.port=3000
+      
+      # Backend routing
+      - traefik.http.routers.backend.rule=Host(`${REACT_APP_FRONTEND_URI}`) && PathPrefix(`/private`, `/public`, `/health`)
+      - traefik.http.routers.backend.entrypoints=http
+      - traefik.http.routers.backend-secure.rule=Host(`${REACT_APP_FRONTEND_URI}`) && PathPrefix(`/private`, `/public`, `/health`)
+      - traefik.http.routers.backend-secure.entrypoints=https
+      - traefik.http.routers.backend-secure.tls=true
+      - traefik.http.routers.backend-secure.tls.certresolver=letsencrypt
+      - traefik.http.services.backend.loadbalancer.server.port=8082
+
+volumes:
+  highlight-data: 
