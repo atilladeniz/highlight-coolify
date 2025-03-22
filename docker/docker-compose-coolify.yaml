@@ -132,6 +132,10 @@ services:
       - coolify.managed=true
       - coolify.type=service
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
+      - traefik.enable=true
+      - traefik.http.routers.collector.rule=Host(`collector-${SERVICE_FQDN_FRONTEND}`) || PathPrefix(`/v1/metrics`)
+      - traefik.http.routers.collector.entrypoints=http
+      - traefik.http.services.collector.loadbalancer.server.port=4318
 
   predictions:
     build:
