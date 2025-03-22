@@ -7,10 +7,10 @@ services:
       context: .
       dockerfile: Dockerfile.hobby
     restart: unless-stopped
-    ports:
-      - "3000:3000"   # Frontend
-      - "8082:8082"   # Backend API
-      - "4318:4318"   # OpenTelemetry
+    expose:
+      - 3000   # Frontend
+      - 8082   # Backend API
+      - 4318   # OpenTelemetry
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - highlight-data:/highlight-data
@@ -24,6 +24,7 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
       - SERVICE_FQDN_HIGHLIGHT
     labels:
+      - coolify.managed=true
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
       

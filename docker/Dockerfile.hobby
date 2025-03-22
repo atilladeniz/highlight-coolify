@@ -39,4 +39,7 @@ ENV ADMIN_PASSWORD=password
 VOLUME ["/var/run/docker.sock", "/highlight-data"]
 
 # Set entry point
-ENTRYPOINT ["/highlight/run-hobby.sh"] 
+ENTRYPOINT ["/highlight/run-hobby.sh"]
+
+# Keep container running even if run-hobby.sh fails
+CMD ["tail", "-f", "/dev/null"] 
