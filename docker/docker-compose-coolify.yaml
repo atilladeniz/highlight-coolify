@@ -70,6 +70,16 @@ services:
     volumes:
       - ../collector/otel-collector.yaml:/etc/otel/config.yaml
 
+  predictions:
+    build:
+      context: ..
+      dockerfile: ./packages/predictions/predictions.Dockerfile
+    restart: on-failure
+    expose:
+      - 5001
+    environment:
+      - TZ=${TZ}
+      
   # Application services
   backend:
     image: ${BACKEND_IMAGE_NAME}
@@ -89,6 +99,7 @@ services:
       - postgres
       - redis
       - collector
+      - predictions
     labels:
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
