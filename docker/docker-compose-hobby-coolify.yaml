@@ -5,7 +5,7 @@ services:
   highlight:
     build:
       context: .
-      dockerfile: Dockerfile.hobby
+      dockerfile: ./Dockerfile.hobby
     restart: unless-stopped
     expose:
       - 3000   # Frontend
