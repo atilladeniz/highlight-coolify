@@ -3,6 +3,7 @@ version: '3'
 # Highlight.io hobby edition for Coolify deployment
 services:
   highlight:
+    image: h8wgoccow08w0cckgc4c08o0
     build:
       context: .
       dockerfile: Dockerfile.hobby

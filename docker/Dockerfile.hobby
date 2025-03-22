@@ -6,8 +6,8 @@ RUN apk add --no-cache bash curl docker docker-compose-plugin
 # Set the working directory
 WORKDIR /highlight
 
-# Copy necessary files from docker directory
-COPY docker/*.yml docker/*.sh docker/.env docker/*.yaml docker/collector.yml ./
+# Copy necessary files from docker directory using simplified wildcard patterns
+COPY docker/*.yml docker/*.sh docker/.env docker/*.yaml ./
 
 # Make scripts executable
 RUN chmod +x run-hobby.sh env.sh start-infra.sh
