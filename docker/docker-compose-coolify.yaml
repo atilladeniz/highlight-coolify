@@ -4,15 +4,23 @@ version: '3'
 services:
   # Infrastructure services
   clickhouse:
-    image: ${CLICKHOUSE_IMAGE_NAME}
+    image: ${CLICKHOUSE_IMAGE_NAME:-clickhouse/clickhouse-server:24.3.15.72-alpine}
     restart: on-failure
     expose:
       - 9000
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     environment:
-      - TZ=${TZ}
-      - SERVICE_PASSWORD_CLICKHOUSE=${SERVICE_PASSWORD_CLICKHOUSE}
+      - TZ=${TZ:-America/Los_Angeles}
+      - SERVICE_PASSWORD_CLICKHOUSE=${SERVICE_PASSWORD_CLICKHOUSE:-password}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-default}
+      - CLICKHOUSE_USERNAME=${CLICKHOUSE_USERNAME:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -21,14 +29,19 @@ services:
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   zookeeper:
-    image: ${ZOOKEEPER_IMAGE_NAME}
+    image: ${ZOOKEEPER_IMAGE_NAME:-confluentinc/cp-zookeeper:7.7.0}
     restart: on-failure
     expose:
       - 2181
     environment:
       - ZOOKEEPER_CLIENT_PORT=2181
       - ZOOKEEPER_TICK_TIME=2000
-      - TZ=${TZ}
+      - TZ=${TZ:-America/Los_Angeles}
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -37,7 +50,7 @@ services:
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   kafka:
-    image: ${KAFKA_IMAGE_NAME}
+    image: ${KAFKA_IMAGE_NAME:-confluentinc/cp-kafka:7.7.0}
     restart: on-failure
     expose:
       - 9092
@@ -46,9 +59,16 @@ services:
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
       - KAFKA_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS:-PLAINTEXT://kafka:9092}
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
-      - TZ=${TZ}
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-dev}
+      - TZ=${TZ:-America/Los_Angeles}
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -57,20 +77,23 @@ services:
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   postgres:
-    image: ${POSTGRES_IMAGE_NAME}
+    image: ${POSTGRES_IMAGE_NAME:-ankane/pgvector:v0.5.1}
     restart: on-failure
     expose:
       - 5432
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=${PSQL_PASSWORD:-postgres}
       - POSTGRES_USER=${PSQL_USER:-postgres}
       - POSTGRES_DB=${PSQL_DB:-postgres}
-      - TZ=${TZ}
-      - SERVICE_PASSWORD_DB=${SERVICE_PASSWORD_DB}
+      - TZ=${TZ:-America/Los_Angeles}
+      - SERVICE_PASSWORD_DB=${SERVICE_PASSWORD_DB:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PSQL_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -79,15 +102,20 @@ services:
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   redis:
-    image: ${REDIS_IMAGE_NAME}
+    image: ${REDIS_IMAGE_NAME:-redis:7.4.0}
     restart: on-failure
     expose:
       - 6379
     volumes:
       - redis-data:/data
     environment:
-      - TZ=${TZ}
-      - SERVICE_PASSWORD_REDIS=${SERVICE_PASSWORD_REDIS}
+      - TZ=${TZ:-America/Los_Angeles}
+      - SERVICE_PASSWORD_REDIS=${SERVICE_PASSWORD_REDIS:-password}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -96,12 +124,12 @@ services:
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.120.0
+    image: ${OTEL_COLLECTOR_IMAGE_NAME:-otel/opentelemetry-collector-contrib:0.120.0}
     restart: on-failure
     expose:
       - 4318
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-America/Los_Angeles}
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
       - collector-config:/etc/otel
@@ -114,6 +142,13 @@ services:
               protocols:
                 http:
                   endpoint: 0.0.0.0:4318
+                  cors:
+                    allowed_origins:
+                      - https://${SERVICE_FQDN_FRONTEND}
+                      - http://${SERVICE_FQDN_FRONTEND}
+                      - https://${REACT_APP_FRONTEND_URI:-localhost:3000}
+                      - http://${REACT_APP_FRONTEND_URI:-localhost:3000}
+                      - "*"
           processors:
             batch:
               timeout: 1s
@@ -126,6 +161,11 @@ services:
                 receivers: [otlp]
                 processors: [batch]
                 exporters: [logging]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4318/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -133,8 +173,12 @@ services:
       - coolify.type=service
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
-      - traefik.http.routers.collector.rule=Host(`collector-${SERVICE_FQDN_FRONTEND}`) || PathPrefix(`/v1/metrics`)
+      - traefik.http.routers.collector.rule=Host(`collector.${REACT_APP_FRONTEND_URI:-localhost:3000}`)
       - traefik.http.routers.collector.entrypoints=http
+      - traefik.http.routers.collector-secure.rule=Host(`collector.${REACT_APP_FRONTEND_URI:-localhost:3000}`)
+      - traefik.http.routers.collector-secure.entrypoints=https
+      - traefik.http.routers.collector-secure.tls=true
+      - traefik.http.routers.collector-secure.tls.certresolver=letsencrypt
       - traefik.http.services.collector.loadbalancer.server.port=4318
 
   predictions:
@@ -145,8 +189,13 @@ services:
     expose:
       - 5001
     environment:
-      - TZ=${TZ}
-      - SERVICE_FQDN_PREDICTIONS
+      - TZ=${TZ:-America/Los_Angeles}
+      - SERVICE_FQDN_PREDICTIONS=${SERVICE_FQDN_PREDICTIONS:-predictions.localhost:3000}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - highlight-network
     labels:
@@ -154,13 +203,13 @@ services:
       - coolify.type=service
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
-      - traefik.http.routers.predictions.rule=Host(`${SERVICE_FQDN_PREDICTIONS}`)
+      - traefik.http.routers.predictions.rule=Host(`${SERVICE_FQDN_PREDICTIONS:-predictions.localhost:3000}`)
       - traefik.http.routers.predictions.entrypoints=http
       - traefik.http.services.predictions.loadbalancer.server.port=5001
       
   # Application services
   backend:
-    image: ${BACKEND_IMAGE_NAME}
+    image: ${BACKEND_IMAGE_NAME:-ghcr.io/highlight/highlight-backend:docker-v0.5.2}
     restart: on-failure
     expose:
       - 8082
@@ -181,25 +230,45 @@ services:
       - COLLECTOR_ENDPOINT=http://collector:4318
       - PREDICTIONS_ENDPOINT=http://predictions:5001
       - SERVICE_FQDN_BACKEND=/private,/public,/health
-      - SERVICE_PASSWORD_BACKEND=${SERVICE_PASSWORD_BACKEND}
-      - REDIS_PASSWORD=${SERVICE_PASSWORD_REDIS}
-      - DB_PASSWORD=${SERVICE_PASSWORD_DB}
+      - SERVICE_PASSWORD_BACKEND=${SERVICE_PASSWORD_BACKEND:-password}
+      - REDIS_PASSWORD=${SERVICE_PASSWORD_REDIS:-password}
+      - DB_PASSWORD=${SERVICE_PASSWORD_DB:-postgres}
+      - DISABLE_CORS=${DISABLE_CORS:-true}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - SSL=${SSL:-false}
+      - ENV=${ENVIRONMENT:-production}
+      - ON_PREM=true
+      - OBJECT_STORAGE_FS=${OBJECT_STORAGE_FS:-/highlight-data}
+      - EMAIL_OPT_OUT_SALT=${EMAIL_OPT_OUT_SALT:-salt}
+      - REACT_APP_AUTH_MODE=${REACT_APP_AUTH_MODE:-password}
+      - SESSION_FILE_PATH_PREFIX=${SESSION_FILE_PATH_PREFIX:-/tmp/}
     depends_on:
-      - clickhouse
-      - kafka
-      - postgres
-      - redis
-      - collector
-      - predictions
+      clickhouse:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      collector:
+        condition: service_healthy
+      predictions:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     labels:
       - coolify.managed=true
       - coolify.type=application
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-      - traefik.http.routers.backend.rule=Host(`${REACT_APP_FRONTEND_URI}`) && PathPrefix(`/private`, `/public`, `/health`)
+      - traefik.http.routers.backend.rule=Host(`${REACT_APP_FRONTEND_URI:-localhost:3000}`) && PathPrefix(`/private`, `/public`, `/health`)
       - traefik.http.routers.backend.entrypoints=http
-      - traefik.http.routers.backend-secure.rule=Host(`${REACT_APP_FRONTEND_URI}`) && PathPrefix(`/private`, `/public`, `/health`)
+      - traefik.http.routers.backend-secure.rule=Host(`${REACT_APP_FRONTEND_URI:-localhost:3000}`) && PathPrefix(`/private`, `/public`, `/health`)
       - traefik.http.routers.backend-secure.entrypoints=https
       - traefik.http.routers.backend-secure.tls=true
       - traefik.http.routers.backend-secure.tls.certresolver=letsencrypt
@@ -208,7 +277,7 @@ services:
       - highlight-network
 
   frontend:
-    image: ${FRONTEND_IMAGE_NAME}
+    image: ${FRONTEND_IMAGE_NAME:-ghcr.io/highlight/highlight-frontend:docker-v0.5.2}
     restart: on-failure
     expose:
       - 3000
@@ -216,22 +285,37 @@ services:
       - 8080
     env_file: .env
     environment:
-      - SERVICE_FQDN_FRONTEND
-      - REACT_APP_PRIVATE_GRAPH_URI=http://backend:8082/private
-      - REACT_APP_PUBLIC_GRAPH_URI=http://backend:8082/public
-      - BACKEND_URL=http://backend:8082
-      - AUTH_SECRET=${SERVICE_PASSWORD_AUTH}
+      - SERVICE_FQDN_FRONTEND=${SERVICE_FQDN_FRONTEND:-localhost:3000}
+      - REACT_APP_FRONTEND_URI=${REACT_APP_FRONTEND_URI:-localhost:3000}
+      - REACT_APP_PRIVATE_GRAPH_URI=https://${REACT_APP_FRONTEND_URI:-localhost:3000}/private
+      - REACT_APP_PUBLIC_GRAPH_URI=https://${REACT_APP_FRONTEND_URI:-localhost:3000}/public
+      - REACT_APP_OTLP_ENDPOINT=https://collector.${REACT_APP_FRONTEND_URI:-localhost:3000}
+      - BACKEND_URL=https://${REACT_APP_FRONTEND_URI:-localhost:3000}
+      - AUTH_SECRET=${SERVICE_PASSWORD_AUTH:-password}
+      - REACT_APP_AUTH_MODE=${REACT_APP_AUTH_MODE:-password}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-password}
+      - DISABLE_CORS=${DISABLE_CORS:-true}
+      - SSL=${SSL:-false}
+      - REACT_APP_IN_DOCKER=${REACT_APP_IN_DOCKER:-true}
+      - REACT_APP_DISABLE_ANALYTICS=${REACT_APP_DISABLE_ANALYTICS:-false}
+      - REACT_APP_FRONTEND_ORG=${REACT_APP_FRONTEND_ORG:-1}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     labels:
       - coolify.managed=true
       - coolify.type=application
       - coolify.applicationId=${COOLIFY_APP_ID:-1}
       - traefik.enable=true
       - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
-      - traefik.http.routers.frontend.rule=Host(`${REACT_APP_FRONTEND_URI}`)
+      - traefik.http.routers.frontend.rule=Host(`${REACT_APP_FRONTEND_URI:-localhost:3000}`)
       - traefik.http.routers.frontend.entrypoints=http
-      - traefik.http.routers.frontend-secure.rule=Host(`${REACT_APP_FRONTEND_URI}`)
+      - traefik.http.routers.frontend-secure.rule=Host(`${REACT_APP_FRONTEND_URI:-localhost:3000}`)
       - traefik.http.routers.frontend-secure.entrypoints=https
       - traefik.http.routers.frontend-secure.tls=true
       - traefik.http.routers.frontend-secure.tls.certresolver=letsencrypt
