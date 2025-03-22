@@ -333,7 +333,7 @@ volumes:
 networks:
   highlight-network:
     driver: bridge
-    external: ${USE_EXTERNAL_NETWORK:-false}
+    external: ${USE_EXTERNAL_NETWORK:-true}
     name: ${NETWORK_NAME:-highlight-network}
     labels:
       - coolify.managed=true
